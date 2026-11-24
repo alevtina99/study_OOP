@@ -1,5 +1,5 @@
 class BankingError(Exception):
-    def __init__(self, message, *, balance=None, amount=None):
+    def __init__(self, message, *, balance=None, amount=None, **kwargs):
         self.balance = balance
         self.amount = amount
         super().__init__(message)
