@@ -27,8 +27,15 @@ class InvestmentType(Enum):
     BOND = "BOND"
     ETF = "ETF"
 
+class ClientStatus(Enum):
+    """Available client statuses"""
 
-def parse_status(value):
+    ACTIVE = "active"
+    SLEEPING = "sleeping"
+    GONE = "gone"
+
+
+def parse_account_status(value):
     if isinstance(value, AccountStatus):
         return value
     try:
@@ -38,7 +45,6 @@ def parse_status(value):
         raise InvalidOperationError(
             f"Unknown account status: {value!r}. Expected: {allowed}."
         ) from None
-
 
 def parse_currency(value):
     if isinstance(value, Currency):
@@ -60,4 +66,15 @@ def parse_investment_type(value):
         allowed = ", ".join(item.value for item in InvestmentType)
         raise InvalidOperationError(
             f"Unsupported investment type: {value!r}. Expected: {allowed}."
+        ) from None
+
+def parse_client_status(value):
+    if isinstance(value, ClientStatus):
+        return value
+    try:
+        return ClientStatus(str(value).strip().lower())
+    except ValueError:
+        allowed = ", ".join(item.value for item in ClientStatus)
+        raise InvalidOperationError(
+            f"Unknown client status: {value!r}. Expected: {allowed}."
         ) from None
