@@ -10,7 +10,6 @@ class AccountStatus(Enum):
     FROZEN = "frozen"
     CLOSED = "closed"
 
-
 class Currency(Enum):
     """Available currencies"""
 
@@ -34,6 +33,18 @@ class ClientStatus(Enum):
     SLEEPING = "sleeping"
     GONE = "gone"
 
+class TransactionType(Enum):
+    TRANSFER = "transfer"
+    EXTERNAL_OUT = "external_out"
+    EXTERNAL_IN = "external_in"
+
+
+class TransactionStatus(Enum):
+    PENDING = "pending"
+    DEFERRED = "deferred"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 def parse_account_status(value):
     if isinstance(value, AccountStatus):
@@ -77,4 +88,15 @@ def parse_client_status(value):
         allowed = ", ".join(item.value for item in ClientStatus)
         raise InvalidOperationError(
             f"Unknown client status: {value!r}. Expected: {allowed}."
+        ) from None
+
+def parse_transaction_type(value):
+    if isinstance(value, TransactionType):
+        return value
+    try:
+        return TransactionType(str(value).strip().lower())
+    except ValueError:
+        allowed = ", ".join(item.value for item in TransactionType)
+        raise InvalidOperationError(
+            f"Unknown transaction type: {value!r}. Expected: {allowed}."
         ) from None
