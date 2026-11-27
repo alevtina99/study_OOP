@@ -8,9 +8,10 @@ from .accounts import (
     PremiumAccount,
     SavingsAccount,
 )
+from .audit import audit_risk
 from .client import Client
-from .enums import ClientStatus, parse_account_status
-from .exceptions import ClientLockedError, InvalidOperationError, NightOperationError
+from .enums import ClientStatus, RiskLevel, parse_account_status
+from .exceptions import ClientLockedError, InvalidOperationError, NightOperationError, RiskBlockedError
 
 LARGE_WITHDRAWAL = Decimal("100000")
 ACCOUNT_TYPES = {
@@ -21,10 +22,12 @@ ACCOUNT_TYPES = {
 }
 
 class Bank:
-    def __init__(self, clock=None):
+    def __init__(self, clock=None, audit_log=None, risk_analyzer=None):
         self._clients = {}
         self._accounts = {}
         self._clock = clock or datetime.now
+        self._audit = audit_log
+        self._risk = risk_analyzer
 
     def add_client(self, fio, birth_date, contacts, password, client_id=None, status="active"):
         if client_id is not None and client_id in self._clients:
@@ -120,10 +123,10 @@ class Bank:
         return ranking
 
     def deposit(self, account_id, amount):
-        return self._operate(account_id, "deposit", lambda account: account.deposit(amount))
+        return self._operate(account_id, "deposit", amount, lambda account: account.deposit(amount))
 
     def withdraw(self, account_id, amount):
-        account = self._operate(account_id, "withdrawal", lambda account: account.withdraw(amount))
+        account = self._operate(account_id, "withdrawal", amount, lambda account: account.withdraw(amount))
         if not isinstance(amount, bool) and isinstance(amount, (int, float, Decimal)):
             if Decimal(str(amount)) >= LARGE_WITHDRAWAL:
                 client = self._get_client(account.client_id)
@@ -132,16 +135,26 @@ class Bank:
                 )
         return account
 
-    def _operate(self, account_id, action, operation):
+    def _operate(self, account_id, action, amount, operation):
         account = self._get_account(account_id)
         client = self._get_client(account.client_id)
         self._ensure_client_can_operate(client)
+        self._guard_risk(client, amount, action)
         try:
             operation(account)
         except NightOperationError:
             client.mark_suspicious(f"night {action} on account {account.account_id}")
             raise
         return account
+
+    def _guard_risk(self, client, amount, action):
+        if self._risk is None:
+            return
+        assessment = self._risk.assess(client.client_id, amount, self._clock())
+        if self._audit is not None:
+            audit_risk(self._audit, assessment, f"{action}: {assessment.summary}", self._clock())
+        if assessment.level is RiskLevel.HIGH:
+            raise RiskBlockedError(assessment.summary)
 
     def _ensure_client_can_operate(self, client):
         if client.is_locked:

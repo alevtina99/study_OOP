@@ -48,3 +48,8 @@ class NightOperationError(InvalidOperationError):
     """Exception raised when an operation is attempted during the night ban."""
     def __init__(self, message="Operations are not allowed from 00:00 to 05:00.", **kwargs):
         super().__init__(message, **kwargs)
+
+class RiskBlockedError(BankingError):
+    """Exception raised when a high-risk operation is blocked."""
+    def __init__(self, message="Operation blocked because the risk level is high.", **kwargs):
+        super().__init__(message, **kwargs)
