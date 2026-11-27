@@ -1,10 +1,10 @@
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-from enum import Enum
 import uuid
 
 from .accounts import PremiumAccount
-from .enums import TransactionType, TransactionStatus, parse_currency, parse_transaction_type
+from .audit import audit_risk
+from .enums import RiskLevel, TransactionStatus, TransactionType, parse_currency, parse_transaction_type
 from .exceptions import BankingError, InsufficientFundsError, InvalidOperationError
 
 MONEY = Decimal("0.01")
@@ -240,7 +240,7 @@ class TransactionQueue:
 
 
 class TransactionProcessor:
-    def __init__(self, accounts, clock=None, external_fee_rate="0.01", max_attempts=3):
+    def __init__(self, accounts, clock=None, external_fee_rate="0.01", max_attempts=3, risk_analyzer=None, audit_log=None):
         if isinstance(accounts, dict):
             self._accounts = accounts
         else:
@@ -250,6 +250,8 @@ class TransactionProcessor:
         self._max_attempts = int(max_attempts)
         self._errors = []
         self._processed_ids = []
+        self._risk = risk_analyzer
+        self._audit = audit_log
 
     @property
     def errors(self):
@@ -283,6 +285,8 @@ class TransactionProcessor:
             return transaction
         if transaction.execute_at is not None and transaction.execute_at > self._clock():
             return transaction
+        if self._block_if_dangerous(transaction):
+            return transaction
         transaction._max_attempts = min(transaction.max_attempts, self._max_attempts)
         while transaction.attempts < transaction.max_attempts:
             try:
@@ -295,6 +299,14 @@ class TransactionProcessor:
                     "reason": str(exc),
                     "time": self._clock(),
                 })
+                if self._audit is not None:
+                    self._audit.log(
+                        "error",
+                        str(exc),
+                        client_id=self._client_id(transaction),
+                        transaction_id=transaction.transaction_id,
+                        time=self._clock(),
+                    )
                 if can_retry:
                     continue
                 transaction.fail(self._clock())
@@ -302,10 +314,43 @@ class TransactionProcessor:
                 return transaction
             transaction.complete(self._clock())
             self._processed_ids.append(transaction.transaction_id)
+            if self._risk is not None:
+                self._risk.remember(self._client_id(transaction), transaction.receiver)
             return transaction
         transaction.fail(self._clock())
         self._processed_ids.append(transaction.transaction_id)
         return transaction
+
+    def _block_if_dangerous(self, transaction):
+        if self._risk is None:
+            return False
+        client_id = self._client_id(transaction)
+        assessment = self._risk.assess(
+            client_id,
+            transaction.amount,
+            transaction.created_at,
+            transaction.receiver,
+            transaction.transaction_id,
+        )
+        audit_risk(
+            self._audit,
+            assessment,
+            f"transaction {transaction.transaction_id}: {assessment.summary}",
+            transaction.created_at,
+        )
+        if assessment.level is not RiskLevel.HIGH:
+            return False
+        transaction.record_failure(assessment.summary)
+        transaction.fail(self._clock())
+        self._processed_ids.append(transaction.transaction_id)
+        return True
+
+    def _client_id(self, transaction):
+        account_id = transaction.sender or transaction.receiver
+        account = self._accounts.get(account_id)
+        if account is None or not account.client_id:
+            return account_id or "unknown"
+        return account.client_id
 
     def _apply(self, transaction):
         fee = self.calculate_fee(transaction)

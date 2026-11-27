@@ -46,6 +46,17 @@ class TransactionStatus(Enum):
     FAILED = "failed"
     CANCELLED = "cancelled"
 
+class AuditLevel(Enum):
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
+class RiskLevel(Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
 def parse_account_status(value):
     if isinstance(value, AccountStatus):
         return value
@@ -88,6 +99,28 @@ def parse_client_status(value):
         allowed = ", ".join(item.value for item in ClientStatus)
         raise InvalidOperationError(
             f"Unknown client status: {value!r}. Expected: {allowed}."
+        ) from None
+
+def parse_audit_level(value):
+    if isinstance(value, AuditLevel):
+        return value
+    try:
+        return AuditLevel(str(value).strip().lower())
+    except ValueError:
+        allowed = ", ".join(item.value for item in AuditLevel)
+        raise InvalidOperationError(
+            f"Unknown audit level: {value!r}. Expected: {allowed}."
+        ) from None
+
+def parse_risk_level(value):
+    if isinstance(value, RiskLevel):
+        return value
+    try:
+        return RiskLevel(str(value).strip().lower())
+    except ValueError:
+        allowed = ", ".join(item.value for item in RiskLevel)
+        raise InvalidOperationError(
+            f"Unknown risk level: {value!r}. Expected: {allowed}."
         ) from None
 
 def parse_transaction_type(value):
